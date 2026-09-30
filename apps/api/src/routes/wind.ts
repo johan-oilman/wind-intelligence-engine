@@ -3,6 +3,7 @@ import { actorOf } from "@aihot/backend/admin/auth";
 import { commitWindImport, exportWindProjects, getWindEvidence, listWindProjects, previewWindImport, processWindArticle, reviewWindCandidate, setWindSources, submitWindEvidence, sweepWindArticles, windBrief, windCandidates, windCoverage, windOverview, windProjectDetail, windRunStatus } from "@aihot/backend/projects/service";
 import { adminHandler } from "./admin-auth.ts";
 import { sendProblem } from "../http/respond.ts";
+import { importWindHistory, linkWindHistory, relinkWindHistory, windHistory, windHistoryStats } from "@aihot/backend/projects/history";
 
 const q = (req: FastifyRequest) => req.query as Record<string, string | undefined>;
 const param = (req: FastifyRequest, name: string) => (req.params as Record<string, string>)[name];
@@ -10,6 +11,11 @@ const body = (req: FastifyRequest) => (req.body ?? {}) as Record<string, unknown
 
 /** Private project endpoints reuse the existing session and CSRF boundary. */
 export function registerWind(app: FastifyInstance) {
+  app.get("/api/admin/wind/history", adminHandler(async req => ({ rows: await windHistory(q(req).q, q(req).projectId ?? null), stats: await windHistoryStats() })));
+  app.get("/api/admin/wind/history/:id", adminHandler(async (req, reply) => (await windHistory("", null, param(req, "id")))[0] ?? sendProblem(req, reply, { status: 404, code: "not_found", detail: "历史记录不存在" })));
+  app.post("/api/admin/wind/history/import", adminHandler(async (req, _reply, admin) => importWindHistory(body(req), actorOf(admin))));
+  app.post("/api/admin/wind/history/relink", adminHandler(async (_req, _reply, admin) => relinkWindHistory(actorOf(admin))));
+  app.post("/api/admin/wind/history/:id/projects", adminHandler(async (req, _reply, admin) => linkWindHistory(param(req, "id"), body(req), actorOf(admin))));
   app.get("/api/admin/wind/projects", adminHandler(async req => ({ rows: await listWindProjects(q(req).q) })));
   app.get("/api/admin/wind/overview", adminHandler(async () => windOverview()));
   app.post("/api/admin/wind/import/preview", adminHandler(async req => previewWindImport(body(req))));

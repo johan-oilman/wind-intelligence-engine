@@ -47,6 +47,8 @@ export default [
     route("admin/wind/evidence/:evidenceId", "routes/admin/wind-evidence-detail.tsx"),
     route("admin/wind/coverage", "routes/admin/wind-coverage.tsx"),
     route("admin/wind/brief", "routes/admin/wind-brief.tsx"),
+    route("admin/wind/history", "routes/admin/wind-history.tsx"),
+    route("admin/wind/history/:historyId", "routes/admin/wind-history-detail.tsx"),
     route("admin", "routes/admin/index.tsx"),
     route("admin/content", "routes/admin/content.tsx"),
     route("admin/content/:id", "routes/admin/content-item.tsx"),

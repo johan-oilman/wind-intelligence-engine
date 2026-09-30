@@ -50,3 +50,14 @@ export interface WindBrief {
   day: string; from: string; through: string; changes: WindChange[]; pending: number;
   coverage: WindCoverage[]; unconfigured: number; markdown: string;
 }
+
+export interface WindHistoryEvent {
+  projectHint: string; eventType: string; eventDate: string | null; summary: string;
+  sourceName: string; sourceUrl: string | null; risk: string; suggestedStage: string;
+}
+export interface WindHistoryRecord {
+  id: string; origin: "gmail" | "conversation" | "file"; externalId: string; archiveUrl: string | null;
+  title: string; body: string; sourceAt: string | null; importedAt: string;
+  events: WindHistoryEvent[]; parseNote: string; notification: "sent_record" | "not_sent" | "unknown";
+  projects: Array<{ id: string; name: string; method: "name_match" | "manual" }>;
+}
