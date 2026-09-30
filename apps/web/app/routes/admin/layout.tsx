@@ -25,6 +25,16 @@ export const headers: Route.HeadersFunction = () => ({ "Cache-Control": "no-stor
 
 const NAV: Array<{ group: string; items: Array<{ to: string; label: string; count?: keyof Counts; tone?: "bad" | "accent" }> }> = [
   {
+    group: "风电监控",
+    items: [
+      { to: "/admin/projects", label: "项目底表" },
+      { to: "/admin/wind/review", label: "变化复核" },
+      { to: "/admin/wind/evidence", label: "提交公告" },
+      { to: "/admin/wind/coverage", label: "监控覆盖" },
+      { to: "/admin/wind/brief", label: "项目简报" },
+    ],
+  },
+  {
     group: "内容",
     items: [
       { to: "/admin/content", label: "内容诊断" },
