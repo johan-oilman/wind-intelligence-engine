@@ -60,4 +60,12 @@ export interface WindHistoryRecord {
   title: string; body: string; sourceAt: string | null; importedAt: string;
   events: WindHistoryEvent[]; parseNote: string; notification: "sent_record" | "not_sent" | "unknown";
   projects: Array<{ id: string; name: string; method: "name_match" | "manual" }>;
+  eventProjects?: Array<{ eventIndex: number; projectId: string; projectName: string; method: "name_match" | "manual" }>;
+}
+export interface WindProgress extends WindHistoryEvent {
+  key: string; projectId: string;
+  records: Array<{ historyId: string; eventIndex: number; title: string; origin: WindHistoryRecord["origin"]; notification: WindHistoryRecord["notification"]; sourceAt: string | null; method: "name_match" | "manual" }>;
+}
+export interface WindProjectTracking extends WindProject {
+  progressCount: number; latestProgress: WindProgress | null;
 }

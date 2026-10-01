@@ -4,6 +4,7 @@ import { commitWindImport, exportWindProjects, getWindEvidence, listWindProjects
 import { adminHandler } from "./admin-auth.ts";
 import { sendProblem } from "../http/respond.ts";
 import { importWindHistory, linkWindHistory, relinkWindHistory, windHistory, windHistoryStats } from "@aihot/backend/projects/history";
+import { linkProgress, progressInbox, windProgress } from "@aihot/backend/projects/progress";
 
 const q = (req: FastifyRequest) => req.query as Record<string, string | undefined>;
 const param = (req: FastifyRequest, name: string) => (req.params as Record<string, string>)[name];
@@ -16,14 +17,23 @@ export function registerWind(app: FastifyInstance) {
   app.post("/api/admin/wind/history/import", adminHandler(async (req, _reply, admin) => importWindHistory(body(req), actorOf(admin))));
   app.post("/api/admin/wind/history/relink", adminHandler(async (_req, _reply, admin) => relinkWindHistory(actorOf(admin))));
   app.post("/api/admin/wind/history/:id/projects", adminHandler(async (req, _reply, admin) => linkWindHistory(param(req, "id"), body(req), actorOf(admin))));
-  app.get("/api/admin/wind/projects", adminHandler(async req => ({ rows: await listWindProjects(q(req).q) })));
+  app.get("/api/admin/wind/progress/inbox", adminHandler(async () => ({ rows: await progressInbox() })));
+  app.post("/api/admin/wind/history/:id/events/:index/projects", adminHandler(async (req, _reply, admin) => linkProgress(param(req, "id"), Number(param(req, "index")), body(req), actorOf(admin))));
+  app.get("/api/admin/wind/projects", adminHandler(async req => {
+    const rows = (await listWindProjects(q(req).q)).filter(p => !p.id.startsWith("DEMO-"));
+    const progress = await windProgress(rows.map(p => p.id));
+    const byProject = new Map(rows.map(p => [p.id, [] as typeof progress]));
+    for (const entry of progress) byProject.get(entry.projectId)?.push(entry);
+    return { rows: rows.map(p => { const entries = byProject.get(p.id)!; return { ...p, progressCount: entries.length, latestProgress: entries[0] ?? null }; }) };
+  }));
   app.get("/api/admin/wind/overview", adminHandler(async () => windOverview()));
   app.post("/api/admin/wind/import/preview", adminHandler(async req => previewWindImport(body(req))));
   app.post("/api/admin/wind/import/commit", adminHandler(async (req, _reply, admin) => commitWindImport(body(req), actorOf(admin))));
   app.get("/api/admin/wind/export", adminHandler(async (_req, reply) => reply.type("text/csv; charset=utf-8").header("Content-Disposition", 'attachment; filename="wind-projects.csv"').send(await exportWindProjects())));
   app.get("/api/admin/wind/projects/:id", adminHandler(async (req, reply) => {
-    const result = await windProjectDetail(param(req, "id"));
-    return result ?? sendProblem(req, reply, { status: 404, code: "not_found", detail: "项目不存在" });
+    const id = param(req, "id");
+    const [result, progress] = await Promise.all([windProjectDetail(id), windProgress([id])]);
+    return result ? { ...result, progress } : sendProblem(req, reply, { status: 404, code: "not_found", detail: "项目不存在" });
   }));
   app.post("/api/admin/wind/projects/:id/sources", adminHandler(async (req, _reply, admin) => setWindSources(param(req, "id"), body(req), actorOf(admin))));
   app.get("/api/admin/wind/candidates", adminHandler(async req => ({ rows: await windCandidates(q(req).status, q(req).projectId ?? null) })));

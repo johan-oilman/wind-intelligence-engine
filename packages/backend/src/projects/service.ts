@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { WindBrief, WindCandidate, WindChange, WindCoverage, WindEvidence, WindFact, WindImportPreview, WindOverview, WindProject, WindProjectInput } from "@aihot/contracts/wind";
 import { WIND_FIELDS } from "@aihot/contracts/wind";
+import { relinkProgressIn } from "./progress.ts";
 import { sql, type Db } from "../db.ts";
 import { csvCell, dateOnly, extractWindRules, inputDigest, matchProjects, parseProjectImport, safeEvidenceUrl, scopeOf, validateFact, WIND_EXTRACTOR_VERSION, WindError } from "./rules.ts";
 
@@ -32,9 +33,9 @@ export async function listWindProjects(q = "", db: Db = sql): Promise<WindProjec
   return rows.map(project);
 }
 export async function windOverview(): Promise<WindOverview> {
-  const [r] = await sql`SELECT (SELECT count(*)::int FROM wind_projects) AS projects,
-    (SELECT count(*)::int FROM wind_candidates WHERE status = 'pending') AS pending,
-    (SELECT count(*)::int FROM wind_changes WHERE applied) AS confirmed,
+  const [r] = await sql`SELECT (SELECT count(*)::int FROM wind_projects WHERE id NOT LIKE 'DEMO-%') AS projects,
+    (SELECT count(*)::int FROM wind_candidates WHERE status = 'pending' AND (project_id IS NULL OR project_id NOT LIKE 'DEMO-%')) AS pending,
+    (SELECT count(*)::int FROM wind_changes WHERE applied AND project_id NOT LIKE 'DEMO-%') AS confirmed,
     (SELECT count(*)::int FROM wind_candidates WHERE status = 'pending' AND project_id IS NULL) AS unresolved`;
   return r as unknown as WindOverview;
 }
@@ -77,6 +78,8 @@ export async function commitWindImport(input: { csv?: unknown; projects?: unknow
       await trail(tx, actor, `wind.project.${kind}`, `wind-project:${p.id}`, "底表预览后导入", before ?? null, p);
       if (kind === "create") created++; else updated++;
     }
+    await tx`SELECT pg_advisory_xact_lock(hashtext('wind-history-import'))`;
+    await relinkProgressIn(tx, await listWindProjects("", tx));
     return { created, updated, unchanged: preview.rows.length - created - updated };
   });
 }
@@ -91,7 +94,7 @@ export async function windCandidates(status = "pending", projectId: string | nul
 async function changeRows(db: Db, projectId: string | null, from: Date | null = null, through: Date | null = null) {
   const rows = await db`SELECT ch.*, p.name AS project_name, c.evidence_id, c.quote, e.title, e.url
     FROM wind_changes ch JOIN wind_projects p ON p.id = ch.project_id JOIN wind_candidates c ON c.id = ch.candidate_id JOIN wind_evidence e ON e.id = c.evidence_id
-    WHERE (${projectId}::text IS NULL OR ch.project_id = ${projectId})
+    WHERE (${projectId}::text IS NULL OR ch.project_id = ${projectId}) AND (${projectId}::text IS NOT NULL OR ch.project_id NOT LIKE 'DEMO-%')
       AND (${from}::timestamptz IS NULL OR ch.confirmed_at >= ${from}) AND (${through}::timestamptz IS NULL OR ch.confirmed_at < ${through})
     ORDER BY ch.confirmed_at DESC, ch.id LIMIT 500`;
   return rows.map(change);
@@ -229,7 +232,7 @@ export async function windCoverage(): Promise<WindCoverage[]> {
   const rows = await sql`SELECT p.id AS project_id, p.name AS project_name, s.id AS source_id, s.name AS source_name,
     s.enabled AND p.enabled AS enabled, s.health, s.last_ok_at, s.last_fetch_at, s.next_fetch_at, s.last_error, s.interval_minutes,
     (SELECT status FROM fetch_runs f WHERE f.source_id = s.id ORDER BY started_at DESC LIMIT 1) AS latest_status
-    FROM wind_source_targets t JOIN sources s ON s.id = t.source_id JOIN wind_projects p ON p.id = t.project_id ORDER BY p.name, s.name`;
+    FROM wind_source_targets t JOIN sources s ON s.id = t.source_id JOIN wind_projects p ON p.id = t.project_id WHERE p.id NOT LIKE 'DEMO-%' ORDER BY p.name, s.name`;
   return rows.map(r => ({ projectId: r.project_id, projectName: r.project_name, sourceId: r.source_id, sourceName: r.source_name, enabled: r.enabled,
     health: r.health, lastOkAt: iso(r.last_ok_at), lastFetchAt: iso(r.last_fetch_at), nextFetchAt: iso(r.next_fetch_at), lastError: r.last_error,
     intervalMinutes: r.interval_minutes, status: !r.enabled ? "paused" : r.latest_status === "failed" || r.health === "failing" ? "failed" :
@@ -285,7 +288,7 @@ export async function windBrief(date: string): Promise<WindBrief> {
   const through = new Date(`${d}T09:00:00+08:00`), from = new Date(through.getTime() - 86400000);
   const [allChanges, coverage, counts, unconfigured] = await Promise.all([
     changeRows(sql, null, from, through), windCoverage(), windOverview(),
-    sql`SELECT count(*)::int AS n FROM wind_projects p WHERE p.enabled AND NOT EXISTS (SELECT 1 FROM wind_source_targets t WHERE t.project_id = p.id)`,
+    sql`SELECT count(*)::int AS n FROM wind_projects p WHERE p.enabled AND p.id NOT LIKE 'DEMO-%' AND NOT EXISTS (SELECT 1 FROM wind_source_targets t WHERE t.project_id = p.id)`,
   ]);
   const changes = allChanges.filter(c => c.applied && c.kind !== "historical");
   const md = [`# 海上风电项目简报 · ${d}`, "", `统计窗口：北京时间前一日 09:00 至 ${d} 09:00。`, "", `已确认变化 ${changes.length} 项；当前待复核 ${counts.pending} 条。`, "",
@@ -296,7 +299,7 @@ export async function windBrief(date: string): Promise<WindBrief> {
   return { day: d, from: from.toISOString(), through: through.toISOString(), changes, pending: counts.pending, coverage, unconfigured: unconfigured[0].n, markdown: md };
 }
 export async function exportWindProjects() {
-  const projects = await listWindProjects();
+  const projects = (await listWindProjects()).filter(p => !p.id.startsWith("DEMO-"));
   const facts = await sql`SELECT project_id, field, value FROM wind_facts WHERE scope = 'project'`;
   const current = new Map(facts.map(r => [`${r.project_id}:${r.field}`, r.value]));
   const header = ["id", "name", "province", "city", "developer", "capacityMw", "aliases", "priority"];

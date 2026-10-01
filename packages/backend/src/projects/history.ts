@@ -3,6 +3,7 @@ import type { WindHistoryEvent, WindHistoryRecord } from "@aihot/contracts/wind"
 import { sql, type Db } from "../db.ts";
 import { dateOnly, inputDigest, matchProjects, safeEvidenceUrl, WindError } from "./rules.ts";
 import { listWindProjects } from "./service.ts";
+import { relinkProgressIn } from "./progress.ts";
 
 function text(value: unknown, max: number) { return typeof value === "string" ? value.trim().slice(0, max) : ""; }
 function url(value: unknown) { return value ? safeEvidenceUrl(value) : null; }
@@ -93,6 +94,7 @@ async function relinkWindHistoryIn(db: Db) {
       linked++;
     }
   }
+  await relinkProgressIn(db, projects);
   return { linked };
 }
 export async function relinkWindHistory(actor: string) {
@@ -106,14 +108,17 @@ export async function relinkWindHistory(actor: string) {
 function record(r: Record<string, any>): WindHistoryRecord {
   return { id: r.id, origin: r.origin, externalId: r.external_id, archiveUrl: r.archive_url, title: r.title, body: r.body,
     sourceAt: r.source_at ? new Date(r.source_at).toISOString() : null, importedAt: new Date(r.imported_at).toISOString(),
-    events: r.events, parseNote: r.parse_note, notification: r.notification, projects: r.projects ?? [] };
+    events: r.events, parseNote: r.parse_note, notification: r.notification, projects: r.projects ?? [], eventProjects: r.event_projects ?? [] };
 }
 export async function windHistory(q = "", projectId: string | null = null, id: string | null = null) {
   const search = q.trim() ? `%${q.trim().slice(0, 200)}%` : null;
   const rows = await sql`SELECT h.*, coalesce((SELECT jsonb_agg(jsonb_build_object('id', p.id, 'name', p.name, 'method', t.method) ORDER BY p.name)
     FROM wind_history_projects t JOIN wind_projects p ON p.id = t.project_id WHERE t.history_id = h.id), '[]'::jsonb) AS projects
+    , coalesce((SELECT jsonb_agg(jsonb_build_object('eventIndex', t.event_index, 'projectId', p.id, 'projectName', p.name, 'method', t.method))
+      FROM wind_progress_targets t JOIN wind_projects p ON p.id = t.project_id WHERE t.history_id = h.id), '[]'::jsonb) AS event_projects
     FROM wind_history h WHERE (${id}::text IS NULL OR h.id = ${id}) AND (${search}::text IS NULL OR h.title ILIKE ${search} OR h.events::text ILIKE ${search} OR h.body ILIKE ${search})
-    AND (${projectId}::text IS NULL OR EXISTS (SELECT 1 FROM wind_history_projects t WHERE t.history_id = h.id AND t.project_id = ${projectId}))
+    AND (${projectId}::text IS NULL OR EXISTS (SELECT 1 FROM wind_history_projects t WHERE t.history_id = h.id AND t.project_id = ${projectId})
+      OR EXISTS (SELECT 1 FROM wind_progress_targets t WHERE t.history_id = h.id AND t.project_id = ${projectId}))
     ORDER BY h.source_at DESC NULLS LAST, h.imported_at DESC, h.id LIMIT 500`;
   return rows.map(record);
 }
