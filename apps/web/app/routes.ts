@@ -1,7 +1,8 @@
 import { type RouteConfig, index, layout, route } from "@react-router/dev/routes";
 
 export default [
-  index("routes/home.tsx"),
+  index("routes/project-entry.tsx"),
+  route("news", "routes/home.tsx"),
   route("all", "routes/all.tsx"),
   route("all/search-busy", "routes/search-busy.tsx", { id: "all-search-busy" }),
   route("search-busy", "routes/search-busy.tsx", { id: "search-busy" }),
@@ -39,6 +40,16 @@ export default [
   route("leaderboard/:slug", "routes/leaderboard-model.tsx"),
   route("admin/login", "routes/admin-login.tsx"),
   layout("routes/admin/layout.tsx", { id: "admin-layout" }, [
+    route("admin/projects", "routes/admin/projects.tsx"),
+    route("admin/projects/import", "routes/admin/project-import.tsx"),
+    route("admin/projects/:projectId", "routes/admin/project-detail.tsx"),
+    route("admin/wind/review", "routes/admin/wind-review.tsx"),
+    route("admin/wind/evidence", "routes/admin/wind-evidence.tsx"),
+    route("admin/wind/evidence/:evidenceId", "routes/admin/wind-evidence-detail.tsx"),
+    route("admin/wind/coverage", "routes/admin/wind-coverage.tsx"),
+    route("admin/wind/brief", "routes/admin/wind-brief.tsx"),
+    route("admin/wind/history", "routes/admin/wind-history.tsx"),
+    route("admin/wind/history/:historyId", "routes/admin/wind-history-detail.tsx"),
     route("admin", "routes/admin/index.tsx"),
     route("admin/content", "routes/admin/content.tsx"),
     route("admin/content/:id", "routes/admin/content-item.tsx"),

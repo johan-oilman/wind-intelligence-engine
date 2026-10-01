@@ -1,186 +1,101 @@
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/banner-dark.png">
-    <img src="docs/assets/banner-light.png" alt="AIHOT：每个行业，都可以有自己的 AIHOT。很多条信源流进中间的精选，再分给法律、人力资源、金融等各个行业" width="100%">
-  </picture>
-</p>
+# Wind Intelligence Engine · 风电情报
 
-<p align="center">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-176b75?style=flat-square" alt="MIT License"></a>
-  <img src="https://img.shields.io/badge/Node.js-24-176b75?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 24">
-  <img src="https://img.shields.io/badge/PostgreSQL-17-176b75?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL 17">
-  <img src="https://img.shields.io/badge/Docker-Compose-176b75?style=flat-square&logo=docker&logoColor=white" alt="Docker Compose">
-  <a href="https://aihot.news"><img src="https://img.shields.io/badge/demo-aihot.news-202a30?style=flat-square" alt="aihot.news"></a>
-</p>
+以风电项目底表为中心，记录公告证据、复核事实变化、维护项目状态和时间线。
 
-<p align="center">
-  <b>一个自己找热点、自己写日报的网站框架。</b><br>
-  把信源换成你的，把精选标准换成你的 KnowHow，它就是你的行业热点站。
-</p>
+保留与 [KKKKhazix/AIHOT](https://github.com/KKKKhazix/AIHOT) 的 fork 关系和原始许可证，复用其采集、队列、后台权限和运行管理。原始说明见 [上游 README](docs/upstream-readme.zh-CN.md)。内部包名暂保留 `@aihot/*`，方便同步上游。
 
-<p align="center">
-  <a href="#跑起来">跑起来</a> ·
-  <a href="docs/customize.md">改成你的行业</a> ·
-  <a href="#它是怎么工作的">它是怎么工作的</a> ·
-  <a href="#文档">文档</a> ·
-  <a href="https://github.com/KKKKhazix/AIHOT/discussions">社区交流</a>
-</p>
+## 当前版本：v0.1 项目证据闭环
 
-<br>
+- CSV 底表导入：先预览差异，再确认；项目 ID、别名、容量校验；重复导入幂等，过期预览拒绝写入。
+- 公告正文或附件文字录入：保存快照、哈希、来源和日期；生成规则候选，也可人工指定带原句的候选。
+- 人工复核：接受、驳回、历史补录、显式更正；并发版本检查；原因和操作者留痕。
+- 多维状态：核准、采购、施工、吊装、并网、异常、容量、开发主体、计划并网日期，按项目或标段分别记录。
+- 已绑定信源的文章独立进入项目处理队列，不依赖新闻热度、评分或公开发布；缺正文、未匹配、来源暂停或失败可见。
+- 项目列表、详情、证据、复核队列、覆盖检查、内部简报和 CSV 导出。
+- 项目跟进过程：把旧监控报告、邮件里的每条项目事件归入底表项目，按事件日期展示连续进展；重复通知合并为一个节点，邮件作为节点的来源凭据。无法归属的事件进入待归属队列。
 
-## 这是什么
+所有项目接口位于 `/api/admin/wind/*`，需要后台身份，写操作需要 CSRF。项目资料和全文证据不会通过原有公开 API、RSS 或 MCP 输出。
 
-[AIHOT](https://aihot.news) 是我做的一个 AI 热点网站。它每天从一批信源里收资料，用大模型先筛一遍、再独立打两次分，挑出真正值得看的，写成中文标题和摘要；把不同来源说的同一件事聚成一个事件，按有多少人在说排出热点；每天早上出一份日报。
+目前自动识别依赖明确项目名或已登记别名，以及简单中文里程碑表述，所有候选均须人工确认。未实现语义模型抽取、附件下载/OCR、主动搜索、微信接入、外部通知或私有项目 MCP。覆盖只反映已配置来源的检查状态。底表容量和开发主体是参考数据，已确认事实单独保存。
 
-这个仓库是它的完整框架：网站、后台、精选流程、聚簇和热度算法，**所有提示词的原文和入选门槛**，都在这里。
+## 本机运行
 
-## 为什么开源
+需要 Node.js ≥ 24.11、npm 和 PostgreSQL 17。生产部署沿用 [部署说明](docs/deploy.md)，上线前还需配置身份、备份及确认条款和隐私模板。
 
-这半年，很多做法律、做 HR、做金融、做贵金属的朋友问我，能不能也给他们的行业做一个。
-
-我做不了。我不懂你们的行业，不知道哪些信源有用，也不知道什么样的消息，对你们来说才叫热点。
-
-但你们懂。
-
-既然我没办法满足所有人，那就把火种交到大家自己手上。
-
-## 说在前面
-
-- **我不是专业的开发者。** 我是设计师出身，半年前还看不太懂代码。这套代码是我和 AI 一起重写的，比以前干净了很多，但一定还有写得不好的地方。发现问题欢迎提 Issue，我不一定能很快回复，先说声抱歉。
-- **这是一份快照。** 它来自 AIHOT 正在线上跑的代码，不是精心打磨的通用框架。以后 AIHOT 的更新，我会尽量同步过来，但没法保证每一次都同步。
-- **里面没有 AIHOT 的信源名单和运营数据。** 仓库带了 18 个公开的海外 AI 资讯源做示范，够你跑起来看效果；真正的信源，要换成你自己行业的。
-- **请不要用 AIHOT 的名字和 Logo。** 换上你自己的名字，它就是你的站。
-
-## 它是怎么工作的
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/how-dark.png">
-  <img src="docs/assets/how-light.png" alt="六步：采集、预筛、两次评分、写作、聚簇、热点与成刊" width="100%">
-</picture>
-
-一条资料从信源进来，先判重，再预筛；可能重要的独立打两次分，过了门槛才进精选；然后写中文标题和摘要，和别的报道聚成事件，算进热度，最后进日报。每一步的提示词都在 [`industry/prompts/`](industry/prompts/)，改标准不用改代码。详见 [精选与校准](docs/selection.md)。
-
-### 聚簇与热点
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cluster-dark.png">
-  <img src="docs/assets/cluster-light.png" alt="五个来源的报道聚成一个事件，事件进入当前热点榜" width="100%">
-</picture>
-
-同一件事，官网发一篇、媒体转十篇、X 上吵一天，读者只需要看到一次。AIHOT 把它们聚成一个**事件**：先用标题摘要的向量在最近两周里找候选，再让模型判断是同一件事、后续进展，还是两件事；拿不准的合并，换一家模型再确认一遍。
-
-**热度**按事件算，不按文章算：48 小时内，每个独立来源只算一次，24 小时减半。重复抓取不会多算，一家媒体发十篇也只算一次，所以排在前面的，是真正有很多人在说的事。
-
-### 速度
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/perf-dark.png">
-  <img src="docs/assets/perf-light.png" alt="AIHOT 线上实测：页面中位数 10 毫秒，95% 在 50 毫秒内；接口中位数 6 毫秒，95% 在 12 毫秒内；文章页 95% 在 14 毫秒内" width="100%">
-</picture>
-
-## 你会得到什么
-
-| | |
-|---|---|
-| **六种信源** | RSS、网页列表、JSON 接口、X 账号、微信公众号，以及你自己脚本推送进来的内容。信源分级（官方一手 / 媒体个人），抓取频率按产出自动调整 |
-| **精选** | 预筛，同一份评分标准独立打两次分，再按信源分级的门槛决定入选。提示词和门槛全部公开，全部可以改；用你自己标注的样本在 SelectBench 里校准 |
-| **写作** | 中文标题、答案先行的摘要、推荐理由、标签，外文全文翻译；防止模型把原文没提到的公司写进标题 |
-| **聚簇** | 不同来源报道的同一件事聚成一个事件，后续进展挂在同一个事件下，事件页有综述；人工改过的归属不会被覆盖 |
-| **热点** | 按事件算热度：独立来源越多越靠前，X 上的讨论也算进来；和 6 小时前比，涨得快的标上升，新出现的标“新” |
-| **日报、周报、月报** | 每天 08:00 出日报，每周一出周报，每月 1 日出月报，按分类分节，带导语 |
-| **主题与搜索** | 公司、方向、内容形态三类主题页；标题摘要搜索和全文相关搜索 |
-| **给 Agent 用** | RSS（精选、全部、全文、日报）、公开 API、MCP、`llms.txt`，同一份内容给人看也给 Agent 用 |
-| **后台** | 信源管理与试抓、内容诊断、精选评测、每一步单独换模型、付费服务的预算熔断、运行记录与告警 |
-| **AI 专属模块** | 模型榜（汇总多家公开评测，方法公开）和 Codex 重置监控。别的行业一个开关关掉 |
-
-## 看一眼
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/shots-dark.png">
-  <img src="docs/assets/shots-light.png" alt="首页的当前热点与精选，关于页的信源河" width="100%">
-</picture>
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/board-dark.png">
-  <img src="docs/assets/board-light.png" alt="模型榜" width="100%">
-</picture>
-
-<p align="center"><sub>截图来自用示范信源跑起来的本地站，站名是默认的 MyHOT。</sub></p>
-
-## 跑起来
-
-想创建自己的独立站点，可以先点 [Use this template](https://github.com/KKKKhazix/AIHOT/generate)，再克隆你生成的仓库。想持续合并上游更新或贡献代码，建议先 Fork。下面的命令适合直接试用。
-
-需要 [Docker](https://docs.docker.com/get-docker/)，和一个 OpenAI 兼容的模型 API Key（DeepSeek、千问、智谱都可以）。
-
-```bash
-git clone https://github.com/KKKKhazix/AIHOT.git myhot
-cd myhot
-node scripts/init-env.ts --llm-key <你的模型 API Key>
-docker compose up -d --build
+```sh
+npm ci
+cp .env.example .env
 ```
 
-打开 <http://localhost:3000>。后台在 `/admin`，管理员密码在 `.env` 的 `ADMIN_PASSWORD` 里。一两分钟后开始有内容，第一次导入的资料大约半小时处理完。
+设置 `.env` 的 `DATABASE_URL`、`SESSION_SECRET`、`IMG_PROXY_SIGN_SECRET`、`ADMIN_PASSWORD`（至少 12 位）。首版项目功能不需要模型密钥。本机配置示例：
 
-机器上没有 Node、服务器在中国大陆、要配域名和 HTTPS，见 [部署](docs/deploy.md)。
-
-## 把它改成你的行业
-
-最省事的办法：打开你的 Agent（Claude Code、Codex 都可以），把这个仓库交给它，然后说：
-
-```text
-请读 AGENTS.md 和 docs/customize.md，把这个站改成「法律」行业的热点站。
-我关心的是：……（你想盯哪些信源，你觉得什么消息重要、什么不重要，越具体越好）。
+```dotenv
+DATABASE_URL=postgres://用户名:密码@127.0.0.1:5432/wind_dev
+SITE_URL=http://127.0.0.1:3000
+API_BASE_URL=http://127.0.0.1:3001
+COLLECT_ENABLED=false
+MODEL_CALLS_ENABLED=false
+FEISHU_CONTENT_PUSH_ENABLED=false
+FEISHU_INTERNAL_ENABLED=false
+INDEXNOW_SUBMIT_ENABLED=false
 ```
 
-要改的东西几乎都在 [`industry/`](industry/) 这一个文件夹里，代码基本不用动：
+免登录开发可额外设置 `DEV_AUTH_ROLE=admin`，仅限本机非生产环境；不要用于公开部署。
 
-| 文件 | 改什么 |
-|---|---|
-| `site.ts` | 站名、行业词、首页文案、关于页 |
-| `taxonomy.ts`、`topics.json` | 分类、标签、主题 |
-| `sources.json` | 首次启动时导入的信源 |
-| `prompts/` | 精选标准和写作要求。**你的行业 KnowHow，就写在这里** |
-| `selection.ts` | 入选门槛 |
-| `features.ts` | 模型榜、Codex 重置监控的开关 |
-| `brand/`、`pages/` | 图标、使用规则和隐私说明 |
+```sh
+npm run db:migrate
+# 三个终端分别启动：
+npm run dev:api
+npm run dev:web
+npm run dev:worker
+```
 
-最值得花时间的是评分标准（`prompts/selection-score.md`）和门槛：拿一两百条你自己标注过的资料，用 `scripts/eval-selection.ts` 跑一遍，看它选得准不准，再回去改。怎么做写在 [精选与校准](docs/selection.md) 里。
+打开 `http://127.0.0.1:3000/admin/projects`。显式加载虚构演示数据：
 
-## 文档
+```sh
+node --env-file=.env scripts/wind-demo.ts --confirm-demo
+```
 
-| 文档 | 内容 |
-|---|---|
-| [把它改成你的行业](docs/customize.md) | 站名、分类、信源、提示词、门槛、品牌，一步一步来 |
-| [信源](docs/sources.md) | 六种信源怎么配，分级和全文，外部推送接口 |
-| [精选与校准](docs/selection.md) | 一条资料怎么变成精选，怎么用自己的样本校准 |
-| [事件归组与关系评测](docs/grouping.md) | 事件关系怎么判断，怎么用自己的 pairwise gold set 评测 |
-| [部署](docs/deploy.md) | Docker、域名和 HTTPS、中国大陆、更新、备份、花多少钱 |
-| [架构](docs/architecture.md) | 三个进程、几条不变的规则、目录、对外出口 |
-| [模型榜与 Codex 重置监控](docs/leaderboard.md) | 两个 AI 专属模块 |
+生产环境禁止演示脚本。真实项目和信源未预置；原有 AI 示例信源已清空。
 
-技术栈：Node.js 24 · TypeScript · React Router（服务端渲染）· Fastify · PostgreSQL · pg-boss · Tailwind CSS · Docker Compose。
+## 使用流程
 
-## 交流与贡献
+1. 在“导入底表”上传或粘贴 CSV，预览后确认；同一项目始终使用同一 ID。
+2. 在“提交公告”填写原始发布者、网址、正文和日期。复杂公告可人工指定字段、范围、日期和原句。
+3. 到“待复核”核对归属、原句和范围，填写原因后确认。旧证据默认补历史，不回退较新的状态；发现原状态有误时才选“更正”。
+4. 在详情查看已确认事实和历史。在“信源管理”新增 RSS、网页或 JSON 来源，再到项目详情绑定来源。
+5. 当前采集安全阀关闭。配置并验证来源后才启用采集；“检查已入库材料”只处理现有文章，不会搜索互联网。
+6. 查看覆盖与运行结果，下载内部简报。简报按北京时间前一日 09:00 至当日 09:00 的确认记录生成；待复核和覆盖是查询时的当前状态，消息推送尚未启用。
+7. 从项目底表进入项目详情，查看“项目跟进过程”。旧邮件和报告中的事件按项目及事件日期排列，原始通知作为记录凭据。底表导入后自动按名称和别名匹配已有事件；匹配不唯一时到“待归属进展”逐事件确认，联合工程可人工选择多个项目。整份报告的资料关联不能决定其中各事件的归属。
 
-部署和使用问题到 [问答区](https://github.com/KKKKhazix/AIHOT/discussions/categories/q-a)，新想法到 [想法交流区](https://github.com/KKKKhazix/AIHOT/discussions/categories/ideas)，欢迎在 [作品展示区](https://github.com/KKKKhazix/AIHOT/discussions/categories/show-and-tell) 分享你做出的行业热点站。
+历史导入格式为 `{ "records": [...] }`，每项包含 `origin`（gmail/conversation/file）、稳定 `externalId`、`title`、`body`，可选 `archiveUrl`、带时区的 `sourceAt`。邮件 `sentRecord=true` 仅在取得提供方的已发送记录时设置；会话中自称已发送不会被当作邮件发送证明。保留正文中的 JSON 事件，不能解析的记录也完整保存。同一来源和 ID 重复导入幂等，内容变化须另用版本 ID。
 
-发现 Bug 或有明确的功能建议，可以 [提交 Issue](https://github.com/KKKKhazix/AIHOT/issues/new/choose)。准备改代码前，先看 [贡献说明](CONTRIBUTING.md)；安全漏洞请走 [私密报告入口](SECURITY.md)。
+```sh
+node --env-file=.env scripts/wind-history-import.ts /私有目录/archive.json --confirm-import
+```
 
-## 最后
+原始资料放在 `.data/` 或仓库外，禁止提交公开 GitHub。现有接口只导入，不连接邮箱、不改邮件标签、不发送新邮件。主入口 `/` 转入私有项目底表 `/admin/projects`；`/admin/wind/history` 是事件待归属队列。工程进展与复核后的当前状态同时呈现在项目内，不将中标候选人或审批前公示升级为完成节点。日期未知的事件不以邮件发送时间代替。
 
-AIHOT 曾经只是我无数个深夜里，一个很小、很小的念头。
+CSV 表头及虚构示例：
 
-我不知道它会被改成什么样子，会走到多远的地方。但这可能就是开源最浪漫的地方。
+```csv
+id,name,province,city,developer,capacityMw,aliases,priority
+DEMO-GD-001,示例粤东一期海上风电项目,广东,示例市,示例能源,500,示例粤东一期项目,high
+```
 
-剩下的路，就交给你们了。
+别名用分号分隔。容量支持 `500MW`、`50万千瓦` 等单位，统一存 MW。空容量、开发主体和地区不会清掉已有值。
 
-<p align="right">—— 数字生命卡兹克</p>
+## 验证
 
-## 许可
+使用独立空测试库，名称必须以 `_test` 或 `_ci` 结尾；不要使用业务库。
 
-代码使用 [MIT 许可证](LICENSE)。AIHOT 的名字和 Logo 不在许可范围内。字体、模型厂商和评测来源的标志各有自己的许可和商标归属，见 [NOTICE](NOTICE)。
+```sh
+DATABASE_URL=postgres://用户名:密码@127.0.0.1:5432/wind_test node scripts/migrate.ts
+npm run typecheck
+DATABASE_URL=postgres://用户名:密码@127.0.0.1:5432/wind_test MODEL_CALLS_ENABLED=true npm test
+npm run build -w @aihot/web
+node --test apps/web/tests/*.test.ts
+node scripts/smoke.ts --base http://127.0.0.1:3000
+```
 
----
-
-<sub>**In English:** AIHOT ([aihot.news](https://aihot.news)) is an AI news site that collects from many sources, lets a language model filter and score every item twice, writes Chinese headlines and summaries, clusters reports of the same story into one event, ranks events by how many independent sources discuss them, and publishes a daily briefing. This repository is its complete framework, including every prompt and threshold. Hand it to your coding agent with `AGENTS.md` and `docs/customize.md` to turn it into a news site for your own field. The documentation is in Chinese.</sub>
+后台开发时关闭模型安全阀；后端回归单独启用模型调用，只连接测试创建的本机模拟服务与假密钥，不加载真实凭据。采集和外部推送始终关闭。实现边界与后续工作见 [开发说明](docs/wind-development.md)。
