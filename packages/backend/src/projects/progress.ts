@@ -1,6 +1,11 @@
-import type { WindHistoryEvent, WindProgress, WindProjectInput } from "@aihot/contracts/wind";
+import type { WindHistoryEvent, WindProgress, WindProjectInput, WindProgressInboxEntry } from "@aihot/contracts/wind";
 import { sql, type Db } from "../db.ts";
-import { inputDigest, matchProjects, WindError } from "./rules.ts";
+import { inputDigest, matchProjects, safeEvidenceUrl, WindError } from "./rules.ts";
+import { classifyProgress, type ProgressIdentity } from "./identity.ts";
+async function identities(db: Db) {
+  return new Map((await db`SELECT history_id, event_index, project_names, reason, evidence_url FROM wind_progress_identities`).map(r =>
+    [`${r.history_id}:${r.event_index}`, { projectNames: r.project_names as string[], reason: r.reason as string, evidenceUrl: r.evidence_url as string }]));
+}
 
 // Rules and project-discovery notes are context, not a project's engineering progress.
 export function isProgressEvent(e: WindHistoryEvent) {
@@ -9,14 +14,17 @@ export function isProgressEvent(e: WindHistoryEvent) {
 export async function relinkProgressIn(db: Db, projects: WindProjectInput[]) {
   const pool = projects.filter(p => !p.id.startsWith("DEMO-")).map(p => ({ ...p, enabled: true }));
   const rows = await db`SELECT id, events FROM wind_history`;
+  const knownIdentities = await identities(db);
   const reviewed = new Set((await db`SELECT history_id, event_index FROM wind_progress_reviews`).map(r => `${r.history_id}:${r.event_index}`));
   for (const row of rows) for (const [index, e] of (row.events as WindHistoryEvent[]).entries()) {
     if (reviewed.has(`${row.id}:${index}`)) continue;
     await db`DELETE FROM wind_progress_targets WHERE history_id = ${row.id} AND event_index = ${index} AND method = 'name_match'`;
     if (!isProgressEvent(e)) continue;
-    const matches = matchProjects(e.projectHint, pool);
+    const identity = knownIdentities.get(`${row.id}:${index}`);
+    const resolution = identity ? classifyProgress(e, pool, identity) : null;
+    const matches = resolution ? resolution.kind === "matched" ? resolution.projectIds : [] : matchProjects(e.projectHint, pool);
     // A report-level association cannot decide which project an individual event belongs to.
-    if (matches.length !== 1) continue;
+    if (resolution?.kind !== "matched" && matches.length !== 1) continue;
     for (const id of matches) await db`INSERT INTO wind_progress_targets (history_id, event_index, project_id, method)
       VALUES (${row.id}, ${index}, ${id}, 'name_match') ON CONFLICT DO NOTHING`;
   }
@@ -56,7 +64,7 @@ export async function windProgress(projectIds: string[]): Promise<WindProgress[]
   }
   return [...groups.values()].sort((a, b) => (b.eventDate ?? "").localeCompare(a.eventDate ?? "") || a.key.localeCompare(b.key));
 }
-export async function progressInbox() {
+export async function progressInbox(): Promise<WindProgressInboxEntry[]> {
   const rows = await sql`SELECT h.id, h.title, h.origin, h.events, h.source_at FROM wind_history h
     WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(h.events) WITH ORDINALITY e(value, n)
       WHERE NOT EXISTS (SELECT 1 FROM wind_progress_targets t WHERE t.history_id = h.id AND t.event_index = e.n - 1)
@@ -64,8 +72,30 @@ export async function progressInbox() {
     ORDER BY h.imported_at DESC LIMIT 500`;
   const targets = new Set((await sql`SELECT DISTINCT history_id, event_index FROM wind_progress_targets
     UNION SELECT history_id, event_index FROM wind_progress_reviews`).map(r => `${r.history_id}:${r.event_index}`));
+  const [pool, knownIdentities] = await Promise.all([
+    sql`SELECT id, name, province, city, developer, capacity_mw, aliases, priority, enabled FROM wind_projects`, identities(sql),
+  ]);
+  const projects = pool.map(p => ({ ...p, capacityMw: p.capacity_mw })) as WindProjectInput[];
   return rows.flatMap(r => (r.events as WindHistoryEvent[]).flatMap((e, eventIndex) =>
-    !isProgressEvent(e) || targets.has(`${r.id}:${eventIndex}`) ? [] : [{ ...e, historyId: r.id as string, eventIndex, recordTitle: r.title as string }]));
+    !isProgressEvent(e) || targets.has(`${r.id}:${eventIndex}`) ? [] : [{ ...e, historyId: r.id as string, eventIndex, recordTitle: r.title as string,
+      resolution: classifyProgress(e, projects, knownIdentities.get(`${r.id}:${eventIndex}`)) }]));
+}
+export async function identifyProgress(historyId: string, eventIndex: number, input: ProgressIdentity, actor: string) {
+  if (!Number.isInteger(eventIndex) || eventIndex < 0 || !Array.isArray(input.projectNames) || !input.projectNames.length || input.projectNames.length > 20 ||
+    input.projectNames.some(n => typeof n !== "string" || n.trim().length < 4 || n.length > 200) || typeof input.reason !== "string" || !input.reason.trim() || input.reason.length > 2000) throw new WindError("项目身份补充格式无效");
+  const next = { projectNames: [...new Set(input.projectNames.map(n => n.trim()))], reason: input.reason.trim(), evidenceUrl: safeEvidenceUrl(input.evidenceUrl) };
+  return sql.begin(async tx => {
+    await tx`SELECT pg_advisory_xact_lock(hashtext('wind-history-import'))`;
+    const [archive] = await tx`SELECT events FROM wind_history WHERE id = ${historyId}`;
+    if (!archive?.events[eventIndex] || !isProgressEvent(archive.events[eventIndex])) throw new WindError("项目跟进事件不存在");
+    const [before] = await tx`SELECT * FROM wind_progress_identities WHERE history_id = ${historyId} AND event_index = ${eventIndex}`;
+    await tx`INSERT INTO wind_progress_identities (history_id, event_index, project_names, reason, evidence_url)
+      VALUES (${historyId}, ${eventIndex}, ${tx.json(next.projectNames)}, ${next.reason}, ${next.evidenceUrl})
+      ON CONFLICT (history_id, event_index) DO UPDATE SET project_names = EXCLUDED.project_names, reason = EXCLUDED.reason, evidence_url = EXCLUDED.evidence_url, updated_at = now()`;
+    await tx`INSERT INTO audit_log (actor, action, subject, reason, before, after)
+      VALUES (${actor}, 'wind.progress.identify', ${`wind-history:${historyId}:event:${eventIndex}`}, '补充项目身份及依据；原记录和已确认事实保持不变', ${before ? tx.json(before) : null}, ${tx.json(next)})`;
+    return next;
+  });
 }
 export async function linkProgress(historyId: string, eventIndex: number, input: { projectIds?: unknown }, actor: string) {
   if (!Number.isInteger(eventIndex) || eventIndex < 0 || !Array.isArray(input.projectIds) || input.projectIds.length > 100 || input.projectIds.some(id => typeof id !== "string")) throw new WindError("事件归属格式无效");

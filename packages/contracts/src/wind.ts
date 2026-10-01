@@ -69,3 +69,10 @@ export interface WindProgress extends WindHistoryEvent {
 export interface WindProjectTracking extends WindProject {
   progressCount: number; latestProgress: WindProgress | null;
 }
+export interface WindProgressResolution {
+  kind: "matched" | "missing_project" | "policy" | "needs_review" | "unknown";
+  projectIds: string[]; projectNames: string[]; reason: string; evidenceUrl: string | null;
+}
+export interface WindProgressInboxEntry extends WindHistoryEvent {
+  historyId: string; eventIndex: number; recordTitle: string; resolution: WindProgressResolution;
+}

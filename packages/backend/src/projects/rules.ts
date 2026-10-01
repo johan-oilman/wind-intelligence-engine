@@ -136,7 +136,20 @@ const RULES: Array<{ pattern: RegExp; field: WindField; value: string }> = [
 ];
 export function matchProjects(text: string, projects: WindProjectInput[]): string[] {
   const normalized = text.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
-  return projects.filter(p => p.enabled && [p.name, ...p.aliases].some(a => normalized.includes(a.normalize("NFKC").toLowerCase().replace(/\s+/g, "")))).map(p => p.id).sort();
+  return projects.filter(p => p.enabled && [p.name, ...p.aliases].some(a => {
+    const name = a.normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+    if (!name) return false;
+    let from = 0;
+    for (;;) {
+      const index = normalized.indexOf(name, from); if (index < 0) return false;
+      const next = normalized[index + name.length] ?? "";
+      // 三山岛十 must not match 三山岛十一; the same applies to numbered and Roman sites.
+      if (!(/[一二三四五六七八九十百]$/.test(name) && /^[一二三四五六七八九十百]/.test(next)) &&
+          !(/\d$/.test(name) && /^\d/.test(next)) &&
+          !(/[ivx]$/.test(name) && /^[ivx]/.test(next))) return true;
+      from = index + name.length;
+    }
+  })).map(p => p.id).sort();
 }
 function statedDate(text: string): string | null {
   const dates = [...text.matchAll(/(20\d{2})[年/-](\d{1,2})[月/-](\d{1,2})日?/g)];
